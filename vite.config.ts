@@ -6,6 +6,16 @@ const cesiumSource = 'node_modules/cesium/Build/Cesium';
 const cesiumBaseUrl = 'cesiumStatic';
 
 export default defineConfig({
+  server: {
+    port: 5173,
+    strictPort: true,
+    proxy: {
+      '/api': {
+        target: 'http://localhost:8080',
+        changeOrigin: true,
+      },
+    },
+  },
   define: {
     CESIUM_BASE_URL: JSON.stringify(`/${cesiumBaseUrl}/`),
   },

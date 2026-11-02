@@ -1,12 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
+import { getRegionDetail } from '../../region/api/regionApi';
 import {
   Cartesian3,
+  Color,
   createOsmBuildingsAsync,
   createWorldTerrainAsync,
+  GeoJsonDataSource,
   HeadingPitchRange,
   Ion,
   Math as CesiumMath,
-  Matrix4,
   Viewer,
 } from 'cesium';
 import 'cesium/Build/Cesium/Widgets/widgets.css';
@@ -32,6 +34,7 @@ export default function CesiumMap() {
 
     let disposed = false;
     let viewer: Viewer | undefined;
+    const abortController = new AbortController();
 
     async function initializeMap(container: HTMLDivElement) {
       try {
@@ -59,12 +62,65 @@ export default function CesiumMap() {
 
         viewer = mapViewer;
 
-        // 최초 화면은 미추홀구 주변을 비스듬히 바라본다.
-        mapViewer.camera.lookAt(
-          Cartesian3.fromDegrees(126.65, 37.45),
-          new HeadingPitchRange(0, CesiumMath.toRadians(-45), 5000),
+        // 현재 MVP 대상 지역인 미추홀구의 ID를 사용한다.
+        const region = await getRegionDetail(1, abortController.signal);
+
+        if (disposed) {
+          return;
+        }
+
+        // API의 경계 좌표를 Cesium에서 표시할 데이터로 변환한다.
+        const boundarySource = await GeoJsonDataSource.load(
+          {
+            type: 'Feature',
+            geometry: region.boundary,
+            properties: {
+              name: region.name,
+            },
+          },
+          {
+            fill: Color.CYAN.withAlpha(0.08),
+            stroke: Color.CYAN,
+            clampToGround: true,
+          },
         );
-        mapViewer.camera.lookAtTransform(Matrix4.IDENTITY);
+
+        if (disposed) {
+          return;
+        }
+
+        await mapViewer.dataSources.add(boundarySource);
+
+        if (disposed) {
+          return;
+        }
+
+        // 지형 위에서도 경계선이 보이도록 각 링을 선으로 표시한다.
+        // 바깥 경계뿐 아니라 내부 구멍의 경계도 유지한다.
+        for (const polygon of region.boundary.coordinates) {
+          for (const ring of polygon) {
+            mapViewer.entities.add({
+              polyline: {
+                positions: Cartesian3.fromDegreesArray(
+                  ring.flatMap(([longitude, latitude]) => [longitude, latitude]),
+                ),
+                width: 3,
+                material: Color.CYAN,
+                clampToGround: true,
+              },
+            });
+          }
+        }
+
+        // 고정 좌표 대신 실제 지역 경계가 들어오도록 카메라를 맞춘다.
+        await mapViewer.zoomTo(
+          boundarySource,
+          new HeadingPitchRange(0, CesiumMath.toRadians(-45), 0),
+        );
+
+        if (disposed) {
+          return;
+        }
 
         const buildings = await createOsmBuildingsAsync();
 
@@ -77,7 +133,9 @@ export default function CesiumMap() {
       } catch (cause) {
         if (!disposed) {
           console.error('지도 초기화 실패', cause);
-          setError('지도를 불러오지 못했습니다. 토큰과 네트워크를 확인해주세요.');
+          setError(
+            '지도 또는 지역 경계를 불러오지 못했습니다. 서버 실행 상태와 설정을 확인해주세요.',
+          );
         }
       } finally {
         if (!disposed) {
@@ -91,6 +149,7 @@ export default function CesiumMap() {
     // 화면 종료·개발 중 재실행 시 WebGL 자원을 정리한다.
     return () => {
       disposed = true;
+      abortController.abort();
 
       if (viewer && !viewer.isDestroyed()) {
         viewer.destroy();
