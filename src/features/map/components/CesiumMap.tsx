@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { getRegionDetail } from '../../region/api/regionApi';
+import { getDatasetGrids, type GridMapData } from '../../grid/api/gridApi';
 import { getDefaultDataset, type DatasetSummary } from '../../dataset/api/datasetApi';
 import {
   Cartesian3,
@@ -26,6 +27,8 @@ export default function CesiumMap() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [dataset, setDataset] = useState<DatasetSummary | null>(null);
+  const [gridData, setGridData] = useState<GridMapData | null>(null);
+  const [gridError, setGridError] = useState<string | null>(null);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -143,6 +146,41 @@ export default function CesiumMap() {
         }
 
         mapViewer.scene.primitives.add(buildings);
+
+        // 카메라가 보고 있는 지표면 범위의 경도·위도 사각형을 계산한다.
+        const rectangle = mapViewer.camera.computeViewRectangle(mapViewer.scene.globe.ellipsoid);
+
+        if (!rectangle) {
+          setGridError('현재 지도 범위를 계산하지 못했습니다.');
+        } else {
+          try {
+            // Cesium의 라디안 좌표를 API에서 사용하는 도 단위로 변환한다.
+            const bounds = {
+              west: CesiumMath.toDegrees(rectangle.west),
+              south: CesiumMath.toDegrees(rectangle.south),
+              east: CesiumMath.toDegrees(rectangle.east),
+              north: CesiumMath.toDegrees(rectangle.north),
+            };
+
+            const data = await getDatasetGrids(
+              defaultDataset.datasetId,
+              bounds,
+              abortController.signal,
+            );
+
+            if (disposed) {
+              return;
+            }
+
+            setGridData(data);
+            setGridError(null);
+          } catch (cause) {
+            if (!disposed) {
+              console.error('격자 조회 실패', cause);
+              setGridError('격자 자료를 불러오지 못했습니다. 다시 접속해주세요.');
+            }
+          }
+        }
       } catch (cause) {
         if (!disposed) {
           console.error('지도 초기화 실패', cause);
@@ -197,6 +235,13 @@ export default function CesiumMap() {
           <span>
             기본 격자 크기: {dataset.gridVersion.cellSizeM}m × {dataset.gridVersion.cellSizeM}m
           </span>
+          {gridError ? (
+            <span role="alert">{gridError}</span>
+          ) : gridData ? (
+            <span>최초 조회 격자: {gridData.count.toLocaleString('ko-KR')}개</span>
+          ) : (
+            <span role="status">격자 자료를 불러오는 중입니다.</span>
+          )}
         </aside>
       )}
 
