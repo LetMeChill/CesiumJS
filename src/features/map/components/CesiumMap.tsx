@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { getRegionDetail } from '../../region/api/regionApi';
+import { getDefaultDataset, type DatasetSummary } from '../../dataset/api/datasetApi';
 import {
   Cartesian3,
   Color,
@@ -24,6 +25,7 @@ export default function CesiumMap() {
   const containerRef = useRef<HTMLDivElement>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [dataset, setDataset] = useState<DatasetSummary | null>(null);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -62,8 +64,19 @@ export default function CesiumMap() {
 
         viewer = mapViewer;
 
-        // 현재 MVP 대상 지역인 미추홀구의 ID를 사용한다.
-        const region = await getRegionDetail(1, abortController.signal);
+        // 기본 데이터셋에 연결된 지역을 사용한다.
+        const defaultDataset = await getDefaultDataset(abortController.signal);
+
+        if (disposed) {
+          return;
+        }
+
+        setDataset(defaultDataset);
+
+        const region = await getRegionDetail(
+          defaultDataset.region.regionId,
+          abortController.signal,
+        );
 
         if (disposed) {
           return;
@@ -168,6 +181,24 @@ export default function CesiumMap() {
   return (
     <section className="map-view" aria-label="미추홀구 3D 지도">
       <div ref={containerRef} className="map-container" />
+
+      {dataset && (
+        <aside className="map-dataset-info" aria-label="기준 자료 정보">
+          <strong>{dataset.region.name}</strong>
+
+          <span>
+            위성 관측시각:{' '}
+            {new Date(dataset.referenceTime).toLocaleString('ko-KR', {
+              timeZone: 'Asia/Seoul',
+            })}
+            {' (KST)'}
+          </span>
+
+          <span>
+            기본 격자 크기: {dataset.gridVersion.cellSizeM}m × {dataset.gridVersion.cellSizeM}m
+          </span>
+        </aside>
+      )}
 
       {loading && !error && (
         <div className="map-message" role="status">

@@ -22,3 +22,27 @@
   color: #1f2937;
   box-shadow: 0 4px 16px rgb(0 0 0 / 15%);
 }
+
+.map-dataset-info {
+  position: absolute;
+  z-index: 1;
+  top: 16px;
+  left: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-width: calc(100% - 32px);
+  padding: 14px 18px;
+  border-radius: 8px;
+  background: rgb(255 255 255 / 95%);
+  color: #1f2937;
+  box-shadow: 0 4px 16px rgb(0 0 0 / 15%);
+}
+
+.map-dataset-info strong {
+  font-size: 16px;
+}
+
+.map-dataset-info span {
+  font-size: 13px;
+}
