@@ -6,6 +6,9 @@ const cesiumSource = 'node_modules/cesium/Build/Cesium';
 const cesiumBaseUrl = 'cesiumStatic';
 
 export default defineConfig({
+  build: {
+    rolldownOptions: { input: ['index.html', 'vworld-preview.html'] },
+  },
   server: {
     port: 5173,
     strictPort: true,

@@ -1,0 +1,6 @@
+# 소스 파일의 줄바꿈을 Prettier와 동일한 LF로 유지한다.
+* text=auto eol=lf
+
+# Windows 명령 스크립트는 CRLF로 유지한다.
+*.bat text eol=crlf
+*.cmd text eol=crlf
