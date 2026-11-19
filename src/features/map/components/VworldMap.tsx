@@ -18,9 +18,13 @@ export default function VworldMap() {
   const [error, setError] = useState<string | null>(null);
   const [heatVisible, setHeatVisible] = useState(true);
   const [buildingVisible, setBuildingVisible] = useState(true);
-  const [opacity, setOpacity] = useState(45);
+  const [opacity, setOpacity] = useState(60);
+  const [roadOpacity, setRoadOpacity] = useState(85);
+  const [heatView, setHeatView] = useState<'roads' | 'area'>('roads');
+  const [vegetation, setVegetation] = useState(false);
   const [colorStops, setColorStops] = useState<readonly LstColorStop[]>(LST_COLOR_STOPS);
   const [names, setNames] = useState(false);
+  const [surfaceWarning, setSurfaceWarning] = useState<string | null>(null);
   function send(command: MapCommand) {
     frameRef.current?.contentWindow?.postMessage(
       { channel: MAP_CHANNEL, command },
@@ -45,7 +49,8 @@ export default function VworldMap() {
         setHeatmapReady(true);
         setLoading(false);
         setError(null);
-      } else if (event?.type === 'selected') setSelected(event.grid);
+      } else if (event?.type === 'surface-warning') setSurfaceWarning(event.message);
+      else if (event?.type === 'selected') setSelected(event.grid);
       else if (event?.type === 'error') {
         window.clearTimeout(timeoutRef.current);
         setError(event.message);
@@ -72,9 +77,21 @@ export default function VworldMap() {
         heat: heatVisible,
         buildings: buildingVisible,
         opacity,
+        roadOpacity,
+        heatView,
+        vegetation,
         names,
       });
-  }, [heatVisible, buildingVisible, opacity, heatmapReady, names]);
+  }, [
+    heatVisible,
+    buildingVisible,
+    opacity,
+    roadOpacity,
+    heatmapReady,
+    heatView,
+    vegetation,
+    names,
+  ]);
   const reference = dataset
     ? new Date(dataset.referenceTime).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })
     : '불러오는 중';
@@ -108,6 +125,33 @@ export default function VworldMap() {
             />{' '}
             관측 지표면온도 <span className="pill">LST</span>
           </label>
+          <fieldset className="temperature-view-mode">
+            <legend>온도 표시 범위</legend>
+            <label>
+              <input
+                type="radio"
+                name="heat-view"
+                value="roads"
+                checked={heatView === 'roads'}
+                onChange={() => setHeatView('roads')}
+              />{' '}
+              도로 온도
+            </label>
+            <label>
+              <input
+                type="radio"
+                name="heat-view"
+                value="area"
+                checked={heatView === 'area'}
+                onChange={() => setHeatView('area')}
+              />{' '}
+              전체 온도
+            </label>
+          </fieldset>
+          <p className="muted">
+            같은 관측일의 미추홀구 안에서 상대적으로 낮은 곳은 파랑, 높은 곳은 빨강입니다.
+            위험등급이 아닙니다.
+          </p>
           <label className="range-label" htmlFor="heat-opacity">
             전체 온도 불투명도 <b>{opacity}%</b>
           </label>
@@ -117,7 +161,7 @@ export default function VworldMap() {
             min="0"
             max="100"
             value={opacity}
-            disabled={!heatVisible}
+            disabled={!heatVisible || heatView !== 'area'}
             onChange={(e) => setOpacity(Number(e.target.value))}
           />
           <label className="check-row">
@@ -134,14 +178,38 @@ export default function VworldMap() {
           <label className="check-row">
             <input
               type="checkbox"
+              checked={vegetation}
+              disabled={!heatmapReady || heatVisible}
+              onChange={(e) => setVegetation(e.target.checked)}
+            />
+            녹지 분류 참고 (온도를 끈 뒤 표시)
+          </label>
+          <label className="range-label" htmlFor="road-opacity">
+            도로 온도 강조 <b>{roadOpacity}%</b>
+          </label>
+          <input
+            id="road-opacity"
+            type="range"
+            min="0"
+            max="100"
+            value={roadOpacity}
+            disabled={heatView !== 'roads' || !heatVisible}
+            onChange={(e) => setRoadOpacity(Number(e.target.value))}
+          />
+          <label className="check-row">
+            <input
+              type="checkbox"
               checked={names}
               disabled={!heatmapReady}
               onChange={(e) => setNames(e.target.checked)}
             />
             장소 이름 표시
           </label>
+          {surfaceWarning && <p role="alert">{surfaceWarning}</p>}
           <p className="muted">
-            브이월드가 제공하는 외관 포함 3D 건물입니다. 건물 색상은 온도를 뜻하지 않습니다.
+            온도 표시 중에는 녹지 분류 색을 숨깁니다. 녹지 참고 보기의 녹색은 토지피복도의 산림·초지
+            분류입니다. 개별 나무 위치·높이를 뜻하지 않습니다. 브이월드가 제공하는 외관 포함 3D
+            건물입니다. 건물 색상은 온도를 뜻하지 않습니다.
           </p>
         </div>
         <div className="control-section">
@@ -191,7 +259,7 @@ export default function VworldMap() {
         <div className="map-top-label">
           {heatVisible ? (
             <>
-              관측 LST <span>℃</span>
+              {heatView === 'roads' ? '도로 온도' : '전체 온도'} <span>지역 내 비교</span>
             </>
           ) : (
             <>3D 배경 지도</>
@@ -199,7 +267,7 @@ export default function VworldMap() {
         </div>
         <div className="temperature-legend" aria-label="지표면온도 범례">
           <div>
-            <strong>관측 지표면온도 (℃)</strong>
+            <strong>지역 내 상대 온도 · 실제 값 (℃)</strong>
             <span>LST</span>
           </div>
           <div className="legend-gradient" />
@@ -209,7 +277,11 @@ export default function VworldMap() {
             ))}
           </div>
           <small>
-            30℃ 이하·50℃ 이상은 끝 색상으로 표시
+            낮음 ← 같은 관측일의 지역 내 비교 → 높음
+            <br />
+            5·20·40·60·80·95백분위 기준 · 양끝 초과는 끝 색상
+            <br />
+            도로 색은 해당 격자의 온도이며 도로별 실측값이 아닙니다.
             <br />
             <i /> 관측값 없음 · {missing ?? '—'}개
           </small>
