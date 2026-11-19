@@ -9,6 +9,9 @@ export type MapCommand =
       heat: boolean;
       buildings: boolean;
       opacity: number;
+      roadOpacity: number;
+      heatView: 'roads' | 'area';
+      vegetation: boolean;
       names: boolean;
     }
   | { type: 'focus'; target: 'whole' | 'sk' | 'presentation' }
@@ -22,5 +25,6 @@ export type MapEvent =
       colorStops: LstColorStop[];
     }
   | { type: 'selected'; grid: GridMapItem | null }
-  | { type: 'error'; message: string };
+  | { type: 'error'; message: string }
+  | { type: 'surface-warning'; message: string };
 export const MAP_CHANNEL = 'urban-heat-vworld';

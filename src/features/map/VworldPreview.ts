@@ -1,8 +1,9 @@
+import { createSurfaceRaster } from './layers/createSurfaceRaster';
 import { MAP_CHANNEL, type MapCommand, type MapEvent } from './vworldProtocol';
 import { getDefaultDataset } from '../dataset/api/datasetApi';
 import { getDatasetGrids, type GridMapData, type GridMapItem } from '../grid/api/gridApi';
 import { getRegionDetail } from '../region/api/regionApi';
-import { LST_COLOR_STOPS } from './utils/lstColor';
+import { getRelativeLstStops } from './utils/lstColor';
 import { createLstRaster } from './layers/createLstRaster';
 import type { Viewer, ImageryLayer, Cartesian2 } from 'cesium';
 import './VworldPreview.css';
@@ -39,6 +40,8 @@ const opacity = document.querySelector<HTMLInputElement>('#preview-opacity')!;
 const controller = new AbortController();
 let viewer: Viewer | undefined;
 let heatLayer: ImageryLayer | undefined;
+let roadLayer: ImageryLayer | undefined;
+let greenLayer: ImageryLayer | undefined;
 let stopClick: (() => void) | undefined;
 window.addEventListener(
   'pagehide',
@@ -201,13 +204,13 @@ async function main() {
     },
     controller.signal,
   );
-  const colorStops = [...LST_COLOR_STOPS];
+  const colorStops = getRelativeLstStops(data.grids.map((g) => g.lstC));
   const ticks = document.querySelectorAll('.preview-ticks span');
   colorStops.forEach((stop, i) => {
     if (ticks[i]) ticks[i].textContent = stop.temperature.toFixed(1);
   });
   const previewTitle = document.querySelector('#preview-legend b');
-  if (previewTitle) previewTitle.textContent = '관측 지표면온도 (℃)';
+  if (previewTitle) previewTitle.textContent = '지역 내 상대 온도 (℃)';
   const raster = await createLstRaster(data, controller.signal, colorStops);
   if (!raster) throw new Error('표시할 격자 없음');
   try {
@@ -222,8 +225,39 @@ async function main() {
       .readyPromise;
     if (legacyReady) await legacyReady;
     controller.signal.throwIfAborted();
-    heatLayer = new C.ImageryLayer(provider, { alpha: 0.45 });
+    heatLayer = new C.ImageryLayer(provider, { alpha: embedded ? 0.6 : 0.45 });
     mapViewer.imageryLayers.add(heatLayer);
+    try {
+      const surface = await createSurfaceRaster(raster.url, raster.bounds, controller.signal);
+      try {
+        const makeLayer = async (url: string, alpha: number) => {
+          const p =
+            typeof C.SingleTileImageryProvider.fromUrl === 'function'
+              ? await C.SingleTileImageryProvider.fromUrl(url, { rectangle })
+              : new C.SingleTileImageryProvider({ url, rectangle } as ConstructorParameters<
+                  typeof C.SingleTileImageryProvider
+                >[0]);
+          const ready = (p as typeof p & { readyPromise?: Promise<boolean> }).readyPromise;
+          if (ready) await ready;
+          controller.signal.throwIfAborted();
+          const layer = new C.ImageryLayer(p, { alpha });
+          mapViewer.imageryLayers.add(layer);
+          return layer;
+        };
+        greenLayer = await makeLayer(surface.vegetation, 0.65);
+        roadLayer = await makeLayer(surface.roads, 0.85);
+        greenLayer.show = false;
+        heatLayer.show = !embedded;
+        roadLayer.show = embedded;
+      } finally {
+        surface.dispose();
+      }
+    } catch {
+      notify({
+        type: 'surface-warning',
+        message: '도로·녹지 강조 자료를 읽지 못했습니다. 기본 LST는 계속 표시합니다.',
+      });
+    }
   } finally {
     raster.dispose();
   }
@@ -254,9 +288,14 @@ async function main() {
     if (!command) return;
     if (command.type === 'layers') {
       if (heatLayer) {
-        heatLayer.show = command.heat;
+        heatLayer.show = command.heat && (command.heatView === 'area' || !roadLayer);
         heatLayer.alpha = Math.max(0, Math.min(100, command.opacity)) / 100;
       }
+      if (roadLayer) {
+        roadLayer.show = command.heatView === 'roads' && command.heat;
+        roadLayer.alpha = Math.max(0, Math.min(100, command.roadOpacity)) / 100;
+      }
+      if (greenLayer) greenLayer.show = command.vegetation && !command.heat;
       for (const id of nameIds) {
         const layer = sdkMap?.getLayerElement(id);
         if (command.names) layer?.show();
