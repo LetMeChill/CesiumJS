@@ -1,16 +1,32 @@
 import { useEffect, useRef, useState } from 'react';
 import type { DatasetSummary } from '../../dataset/api/datasetApi';
 import type { GridMapItem } from '../../grid/api/gridApi';
+import { useGridDetail } from '../../grid/hooks/useGridDetail';
 import { MAP_CHANNEL, type MapCommand, type MapEvent } from '../vworldProtocol';
 import { LST_COLOR_STOPS, type LstColorStop } from '../utils/lstColor';
+import GridSpatialDetails, { type GridSpatialValues } from './GridSpatialDetails';
 import './CesiumMap.css';
 
 // 브이월드 SDK는 별도 문서에서 실행해 npm Cesium과 전역 객체·자원 경로 충돌을 막는다.
 export default function VworldMap() {
+  const spatialPreview =
+    import.meta.env.DEV && new URLSearchParams(location.search).get('preview') === 'grid-detail';
+  const [previewCase, setPreviewCase] = useState('values');
+  const previewValues: GridSpatialValues | null = spatialPreview
+    ? {
+        ndvi: previewCase === 'missing' ? null : previewCase === 'zero' ? 0 : 0.28,
+        buildingCoverageRatio: previewCase === 'missing' ? null : previewCase === 'zero' ? 0 : 0.42,
+        forestGrassRatio: previewCase === 'missing' ? null : previewCase === 'zero' ? 0 : 0.18,
+        roadRatio: previewCase === 'missing' ? null : previewCase === 'zero' ? 0 : 0.31,
+        waterRatio: previewCase === 'missing' ? null : 0,
+        imperviousRatio: previewCase === 'missing' ? null : previewCase === 'zero' ? 0 : 0.67,
+      }
+    : null;
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const frameRef = useRef<HTMLIFrameElement>(null);
   const [dataset, setDataset] = useState<DatasetSummary | null>(null);
   const [selected, setSelected] = useState<GridMapItem | null>(null);
+  const detail = useGridDetail(dataset?.datasetId, selected?.gridId ?? null, !spatialPreview);
   const [count, setCount] = useState<number | null>(null);
   const [missing, setMissing] = useState<number | null>(null);
   const [heatmapReady, setHeatmapReady] = useState(false);
@@ -322,31 +338,57 @@ export default function VworldMap() {
           <dt>자료 기준</dt>
           <dd>2026. 6. 16.</dd>
         </dl>
-        <h3>관측 시점의 기상</h3>
-        <div className="weather-cards">
-          <div>
-            <small>기온</small>
-            <b>
-              {dataset?.weather.airTempC ?? '—'}
-              <em> ℃</em>
-            </b>
+        {spatialPreview && (
+          <div className="spatial-preview-controls">
+            <label>
+              공간 특성 UI 미리보기
+              <select
+                aria-label="공간 특성 예시 상태"
+                value={previewCase}
+                onChange={(e) => setPreviewCase(e.target.value)}
+              >
+                <option value="values">일반 값 예시</option>
+                <option value="missing">결측값 예시</option>
+                <option value="zero">실제 0 값 예시</option>
+              </select>
+            </label>
           </div>
-          <div>
-            <small>습도</small>
-            <b>
-              {dataset?.weather.relativeHumidityPct ?? '—'}
-              <em> %</em>
-            </b>
+        )}
+        <GridSpatialDetails
+          selected={selected !== null}
+          values={spatialPreview ? previewValues : detail.data}
+          preview={spatialPreview}
+          loading={detail.loading}
+          error={detail.error}
+          onRetry={detail.retry}
+        />
+        <details className="spatial-weather">
+          <summary>관측 시점의 기상</summary>
+          <div className="weather-cards">
+            <div>
+              <small>기온</small>
+              <b>
+                {dataset?.weather.airTempC ?? '—'}
+                <em> ℃</em>
+              </b>
+            </div>
+            <div>
+              <small>습도</small>
+              <b>
+                {dataset?.weather.relativeHumidityPct ?? '—'}
+                <em> %</em>
+              </b>
+            </div>
+            <div>
+              <small>풍속</small>
+              <b>
+                {dataset?.weather.windSpeedMS ?? '—'}
+                <em> m/s</em>
+              </b>
+            </div>
           </div>
-          <div>
-            <small>풍속</small>
-            <b>
-              {dataset?.weather.windSpeedMS ?? '—'}
-              <em> m/s</em>
-            </b>
-          </div>
-        </div>
-        <p className="muted">인천 ASOS 112 · 실시간 기상이 아닙니다.</p>
+          <p className="muted">인천 ASOS 112 · 실시간 기상이 아닙니다.</p>
+        </details>
         <details className="map-building-controls">
           <summary>건물 자료 · 품질 정보</summary>
           <p>3D 건물·지형·배경: 브이월드</p>
