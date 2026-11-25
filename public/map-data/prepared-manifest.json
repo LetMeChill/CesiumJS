@@ -1,0 +1,99 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-11-25T17:22:34.548Z",
+  "datasetSha256": "d275ca14869b55be6e42cf733eb33704eec9274f55c8cb44acd1b79edfdf8f4c",
+  "gridSha256": "5d04b94317a5f5aa655aee97d921fcf3a53161e81b58d8c47652f948bf7d0fc2",
+  "datasetId": 1,
+  "datasetCode": "mch30_platform_fixed_v2",
+  "referenceTime": "2026-06-16T02:10:14.134Z",
+  "count": 28258,
+  "missing": 47,
+  "bounds": [
+    126.62887391281936,
+    37.42994837238387,
+    126.70293960754105,
+    37.48403281129031
+  ],
+  "colorStops": [
+    {
+      "temperature": 32.70806483000001,
+      "rgb": [
+        37,
+        99,
+        235
+      ]
+    },
+    {
+      "temperature": 39.09805322,
+      "rgb": [
+        6,
+        182,
+        212
+      ]
+    },
+    {
+      "temperature": 40.83098935999999,
+      "rgb": [
+        34,
+        197,
+        94
+      ]
+    },
+    {
+      "temperature": 41.81196110000002,
+      "rgb": [
+        250,
+        204,
+        21
+      ]
+    },
+    {
+      "temperature": 42.81344095999998,
+      "rgb": [
+        249,
+        115,
+        22
+      ]
+    },
+    {
+      "temperature": 44.881343060000034,
+      "rgb": [
+        220,
+        38,
+        38
+      ]
+    }
+  ],
+  "rendererSha256": {
+    "src/features/map/layers/createLstRaster.ts": "3e1ade49233d5d271e965731f4c668134c9c7adf7c046912044ae09f89b51cbb",
+    "src/features/map/layers/createSurfaceRaster.ts": "3b9ccc6cfbd36dc8f67d085934c1e69f83cc30bb998373890591b740061d44f5",
+    "src/features/map/utils/lstColor.ts": "a16daa92d0f047a151b0bb342d5d2b6850b532d9ff033f2651e436654f239e0e"
+  },
+  "landcoverSha256": "ec8c7a9f6c47900e4c5c977b41ef9fb80a93ab2fef69346d1fa5e06ecf3ff9c0",
+  "assets": {
+    "heat": {
+      "url": "/map-data/prepared/96abbbba843d4b26120bbb2ac3f0b45c356280e2461ede1608c30ec115d8d2ba/heat.png",
+      "sha256": "c5ace1dde25d624916270f3753e7a6e7a04eab2874d100351b65ca3c543a804f",
+      "bytes": 1369124,
+      "pixelSha256": "c97424bd04155027208395509efb0244d288cf6a940e8301395ba67d3894806b",
+      "width": 2048,
+      "height": 1495
+    },
+    "roads": {
+      "url": "/map-data/prepared/96abbbba843d4b26120bbb2ac3f0b45c356280e2461ede1608c30ec115d8d2ba/roads.png",
+      "sha256": "d347432aa9173a99df2fda0ea05025a1079b62dc3aaa420a4836188e4933d32b",
+      "bytes": 8054311,
+      "pixelSha256": "5f50f528b1a53ebceb2c8138c35b1fcc2d401aa7ab130080f6373f803037aad7",
+      "width": 4096,
+      "height": 2991
+    },
+    "vegetation": {
+      "url": "/map-data/prepared/96abbbba843d4b26120bbb2ac3f0b45c356280e2461ede1608c30ec115d8d2ba/vegetation.png",
+      "sha256": "9280d8a9abc6e457165540232550cc00e64ef9f798e84e46f8ac65ffefe9e75f",
+      "bytes": 1719618,
+      "pixelSha256": "3ea5ca5057107d148fac52c0b43985143db923e8837796dfb28ff2a2a03faca9",
+      "width": 4096,
+      "height": 2991
+    }
+  }
+}

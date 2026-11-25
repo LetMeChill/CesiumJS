@@ -1,17 +1,24 @@
 // 도로 경계 안에는 기존 격자 LST 색을, 녹지에는 토지피복 분류 색을 표시한다.
 // 경계가 세밀해져도 온도의 관측 해상도는 높아지지 않는다.
-interface CoverFeature {
+export interface CoverFeature {
   properties: { kind: 'road' | 'forest' | 'grass' };
   geometry: { type: 'Polygon'; coordinates: [number, number][][] };
+}
+export interface SurfaceCover {
+  features: CoverFeature[];
+}
+export async function loadSurfaceCover(signal: AbortSignal): Promise<SurfaceCover> {
+  const response = await fetch('/map-data/landcover-2025.geojson', { signal });
+  if (!response.ok) throw new Error('도로·녹지 자료 조회 실패');
+  return response.json();
 }
 export async function createSurfaceRaster(
   heatUrl: string,
   bounds: [number, number, number, number],
   signal: AbortSignal,
+  cover?: Promise<SurfaceCover>,
 ): Promise<{ roads: string; vegetation: string; dispose(): void }> {
-  const response = await fetch('/map-data/landcover-2025.geojson', { signal });
-  if (!response.ok) throw new Error('도로·녹지 자료 조회 실패');
-  const data = (await response.json()) as { features: CoverFeature[] };
+  const data = await (cover ?? loadSurfaceCover(signal));
   const [west, south, east, north] = bounds;
   const width = 4096,
     height = Math.round((width * (north - south)) / (east - west));

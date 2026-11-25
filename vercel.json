@@ -8,5 +8,25 @@
       "source": "/api/:path*",
       "destination": "http://140.238.63.193/api/:path*"
     }
+  ],
+  "headers": [
+    {
+      "source": "/map-data/prepared/:path*",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=31536000, immutable"
+        }
+      ]
+    },
+    {
+      "source": "/map-data/prepared-manifest.json",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-cache"
+        }
+      ]
+    }
   ]
 }
