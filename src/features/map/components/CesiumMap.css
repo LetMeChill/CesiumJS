@@ -5,7 +5,7 @@
   grid-template-rows: 64px minmax(0, 1fr);
   color: #243848;
   background: #f5f8fa;
-  font-family: Arial, 'Noto Sans KR', sans-serif;
+  font-family: var(--app-font-family);
   font-size: 13px;
 }
 .dashboard-header {

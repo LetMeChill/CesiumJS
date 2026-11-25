@@ -1,9 +1,12 @@
+import type { PopulationLayerCommand, PopulationSelection } from '../population/populationData';
 import type { LstColorStop } from './utils/lstColor';
 import type { DatasetSummary } from '../dataset/api/datasetApi';
 import type { GridMapItem } from '../grid/api/gridApi';
 
 // 같은 출처의 지도 프레임과 React 패널이 주고받는 메시지다.
 export type MapCommand =
+  | PopulationLayerCommand
+  | { type: 'focus-point'; longitude: number; latitude: number; range: number }
   | {
       type: 'layers';
       heat: boolean;
@@ -17,6 +20,7 @@ export type MapCommand =
   | { type: 'focus'; target: 'whole' | 'sk' | 'presentation' }
   | { type: 'zoom'; direction: 'in' | 'out' };
 export type MapEvent =
+  | { type: 'population-selected'; selection: PopulationSelection }
   | {
       type: 'ready';
       dataset: DatasetSummary;
