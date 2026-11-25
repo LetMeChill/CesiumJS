@@ -1,3 +1,4 @@
+import { createPopulationLayer } from './layers/createPopulationLayer';
 import { createSurfaceRaster } from './layers/createSurfaceRaster';
 import { MAP_CHANNEL, type MapCommand, type MapEvent } from './vworldProtocol';
 import { getDefaultDataset } from '../dataset/api/datasetApi';
@@ -42,12 +43,14 @@ let viewer: Viewer | undefined;
 let heatLayer: ImageryLayer | undefined;
 let roadLayer: ImageryLayer | undefined;
 let greenLayer: ImageryLayer | undefined;
+let populationLayer: ReturnType<typeof createPopulationLayer> | undefined;
 let stopClick: (() => void) | undefined;
 window.addEventListener(
   'pagehide',
   () => {
     controller.abort();
     stopClick?.();
+    populationLayer?.destroy();
     if (viewer && !viewer.isDestroyed()) viewer.destroy();
   },
   { once: true },
@@ -76,6 +79,7 @@ function connectGridClick(C: CesiumRuntime, mapViewer: Viewer, data: GridMapData
   });
   const handler = new C.ScreenSpaceEventHandler(mapViewer.canvas);
   handler.setInputAction((event: { position: Cartesian2 }) => {
+    if (populationLayer?.handleClick(event.position)) return;
     const ray = mapViewer.camera.getPickRay(event.position);
     const point = ray && mapViewer.scene.globe.pick(ray, mapViewer.scene);
     if (!point) return;
@@ -149,6 +153,9 @@ async function main() {
     mapViewer = window.ws3d?.viewer;
   if (!mapViewer) throw new Error('브이월드 뷰어 없음');
   viewer = mapViewer;
+  populationLayer = createPopulationLayer(C, mapViewer, (selection) =>
+    notify({ type: 'population-selected', selection }),
+  );
   // 홈페이지에서 확인한 LoD3·LoD4를 공식 SDK 레이어로 함께 표시한다.
   for (const id of ['facility_build_lod3', 'facility_build']) {
     const layer = sdkMap?.getLayerElement(id);
@@ -286,7 +293,19 @@ async function main() {
       return;
     const command = message.data.command as MapCommand | undefined;
     if (!command) return;
-    if (command.type === 'layers') {
+    if (command.type === 'population') {
+      populationLayer?.update(command);
+    } else if (command.type === 'focus-point') {
+      if (
+        Number.isFinite(command.longitude) &&
+        Number.isFinite(command.latitude) &&
+        command.longitude > 126 &&
+        command.longitude < 127 &&
+        command.latitude > 37 &&
+        command.latitude < 38
+      )
+        focus(command.longitude, command.latitude, Math.max(600, Math.min(14000, command.range)));
+    } else if (command.type === 'layers') {
       if (heatLayer) {
         heatLayer.show = command.heat && (command.heatView === 'area' || !roadLayer);
         heatLayer.alpha = Math.max(0, Math.min(100, command.opacity)) / 100;
