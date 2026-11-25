@@ -28,7 +28,7 @@ export default function VworldMap() {
   const [populationMonth, setPopulationMonth] = useState<PopulationMonth>('202610');
   const [populationMetric, setPopulationMetric] = useState<PopulationMetric>('share');
   const [shelters, setShelters] = useState(true);
-  const [shade, setShade] = useState(false);
+  const [shade, setShade] = useState(true);
   const [radius, setRadius] = useState<0 | 300 | 500>(0);
   const [populationSelection, setPopulationSelection] = useState<PopulationSelection | null>(null);
   const [populationDetailOpen, setPopulationDetailOpen] = useState(true);
