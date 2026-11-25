@@ -1,11 +1,11 @@
+import { trackMapRendering } from './utils/mapRenderingMetrics';
+import { createGridPicker } from './utils/gridPicker';
 import { createPopulationLayer } from './layers/createPopulationLayer';
-import { createSurfaceRaster } from './layers/createSurfaceRaster';
+import { loadMapRasters } from './utils/preparedMapAssets';
 import { MAP_CHANNEL, type MapCommand, type MapEvent } from './vworldProtocol';
-import { getDefaultDataset } from '../dataset/api/datasetApi';
-import { getDatasetGrids, type GridMapData, type GridMapItem } from '../grid/api/gridApi';
-import { getRegionDetail } from '../region/api/regionApi';
-import { getRelativeLstStops } from './utils/lstColor';
-import { createLstRaster } from './layers/createLstRaster';
+import { type GridMapData, type GridMapItem } from '../grid/api/gridApi';
+import { loadMapData } from './utils/loadMapData';
+import { measureMapStage } from './utils/mapPerformance';
 import type { Viewer, ImageryLayer, Cartesian2 } from 'cesium';
 import './VworldPreview.css';
 
@@ -57,26 +57,8 @@ window.addEventListener(
 );
 
 // 브이월드가 제공한 Cesium 런타임만 사용한다. npm Cesium 엔진을 중복 생성하지 않는다.
-function inRing(x: number, y: number, ring: [number, number][]) {
-  let inside = false;
-  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-    const [xi, yi] = ring[i],
-      [xj, yj] = ring[j];
-    if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
-  }
-  return inside;
-}
 function connectGridClick(C: CesiumRuntime, mapViewer: Viewer, data: GridMapData) {
-  const indexed = data.grids.map((grid) => {
-    const points = grid.boundary.coordinates.flat(2);
-    return {
-      grid,
-      west: Math.min(...points.map((p) => p[0])),
-      east: Math.max(...points.map((p) => p[0])),
-      south: Math.min(...points.map((p) => p[1])),
-      north: Math.max(...points.map((p) => p[1])),
-    };
-  });
+  const pickGrid = createGridPicker(data);
   const handler = new C.ScreenSpaceEventHandler(mapViewer.canvas);
   handler.setInputAction((event: { position: Cartesian2 }) => {
     if (populationLayer?.handleClick(event.position)) return;
@@ -86,16 +68,7 @@ function connectGridClick(C: CesiumRuntime, mapViewer: Viewer, data: GridMapData
     const c = C.Cartographic.fromCartesian(point),
       x = C.Math.toDegrees(c.longitude),
       y = C.Math.toDegrees(c.latitude);
-    const grid: GridMapItem | undefined = indexed.find(
-      (item) =>
-        x >= item.west &&
-        x <= item.east &&
-        y >= item.south &&
-        y <= item.north &&
-        item.grid.boundary.coordinates.some(
-          (p) => inRing(x, y, p[0]) && !p.slice(1).some((hole) => inRing(x, y, hole)),
-        ),
-    )?.grid;
+    const grid: GridMapItem | undefined = pickGrid(x, y);
     notify({ type: 'selected', grid: grid ?? null });
     mapViewer.entities.removeById('selected-grid');
     if (grid) {
@@ -127,32 +100,53 @@ async function main() {
   (
     window.Cesium.buildModuleUrl as ((url: string) => string) & { setBaseUrl(url: string): void }
   ).setBaseUrl(sdkBase);
+  // SDK 초기화와 독립적인 다운로드를 먼저 시작한다. 실패는 아래 await에서 처리한다.
+  const dataPromise = measureMapStage('data-total', () => loadMapData(controller.signal));
+  const rastersPromise = measureMapStage('rasters-total', () =>
+    loadMapRasters(dataPromise, controller.signal),
+  );
+  void dataPromise.catch(() => {});
+  void rastersPromise.then(
+    (raster) => {
+      if (controller.signal.aborted) raster.dispose();
+    },
+    () => {},
+  );
   status.textContent = '브이월드 3D 지도 초기화 중…';
   let sdkMap: InstanceType<VworldRuntime['Map']> | undefined;
-  await new Promise<void>((resolve, reject) => {
-    const timer = window.setTimeout(() => reject(new Error('지도 초기화 시간 초과')), 60000);
-    vw.ws3dInitCallBack = () => {
-      window.clearTimeout(timer);
-      resolve();
-    };
-    const map = new vw.Map();
-    sdkMap = map;
-    map.setOption({
-      mapId: 'vworld-map',
-      initPosition: new vw.CameraPosition(
-        new vw.CoordZ(126.646, 37.4474, 2500),
-        new vw.Direction(0, -55, 0),
-      ),
-      logo: true,
-      navigation: true,
-    });
-    map.start();
-  });
+  await measureMapStage(
+    'sdk-init',
+    () =>
+      new Promise<void>((resolve, reject) => {
+        const timer = window.setTimeout(() => reject(new Error('지도 초기화 시간 초과')), 60000);
+        vw.ws3dInitCallBack = () => {
+          window.clearTimeout(timer);
+          resolve();
+        };
+        const map = new vw.Map();
+        sdkMap = map;
+        map.setOption({
+          mapId: 'vworld-map',
+          initPosition: new vw.CameraPosition(
+            new vw.CoordZ(
+              embedded ? 126.665 : 126.646,
+              embedded ? 37.451 : 37.4474,
+              embedded ? 12500 : 1800,
+            ),
+            new vw.Direction(0, -55, 0),
+          ),
+          logo: true,
+          navigation: true,
+        });
+        map.start();
+      }),
+  );
   controller.signal.throwIfAborted();
   const C = window.Cesium!,
     mapViewer = window.ws3d?.viewer;
   if (!mapViewer) throw new Error('브이월드 뷰어 없음');
   viewer = mapViewer;
+  trackMapRendering(mapViewer, controller.signal);
   populationLayer = createPopulationLayer(C, mapViewer, (selection) =>
     notify({ type: 'population-selected', selection }),
   );
@@ -167,6 +161,7 @@ async function main() {
   nameIds.forEach((id) => sdkMap?.getLayerElement(id)?.hide());
   sdkMap?.getLayerElement('bill_tree')?.hide();
   const focus = (lon: number, lat: number, range: number) => {
+    mapViewer.camera.cancelFlight();
     mapViewer.camera.lookAt(
       C.Cartesian3.fromDegrees(lon, lat, 10),
       new C.HeadingPitchRange(0, -0.9, range),
@@ -186,8 +181,7 @@ async function main() {
   if (embedded) focus(126.665, 37.451, 12500);
   else focus(126.646, 37.4474, 1800);
   status.textContent = '3D 지도 연결됨 · 기준 온도 자료를 읽는 중…';
-  const dataset = await getDefaultDataset(controller.signal);
-  const region = await getRegionDetail(dataset.region.regionId, controller.signal);
+  const { dataset, region, data } = await dataPromise;
   for (const polygon of region.boundary.coordinates) {
     for (const ring of polygon) {
       mapViewer.entities.add({
@@ -200,26 +194,14 @@ async function main() {
       });
     }
   }
-  const points = region.boundary.coordinates.flat(2);
-  const data = await getDatasetGrids(
-    dataset.datasetId,
-    {
-      west: Math.min(...points.map((p) => p[0])),
-      south: Math.min(...points.map((p) => p[1])),
-      east: Math.max(...points.map((p) => p[0])),
-      north: Math.max(...points.map((p) => p[1])),
-    },
-    controller.signal,
-  );
-  const colorStops = getRelativeLstStops(data.grids.map((g) => g.lstC));
+  const raster = await rastersPromise;
+  const colorStops = [...raster.colorStops];
   const ticks = document.querySelectorAll('.preview-ticks span');
   colorStops.forEach((stop, i) => {
     if (ticks[i]) ticks[i].textContent = stop.temperature.toFixed(1);
   });
   const previewTitle = document.querySelector('#preview-legend b');
   if (previewTitle) previewTitle.textContent = '지역 내 상대 온도 (℃)';
-  const raster = await createLstRaster(data, controller.signal, colorStops);
-  if (!raster) throw new Error('표시할 격자 없음');
   try {
     const rectangle = C.Rectangle.fromDegrees(...raster.bounds);
     const provider =
@@ -235,8 +217,8 @@ async function main() {
     heatLayer = new C.ImageryLayer(provider, { alpha: embedded ? 0.6 : 0.45 });
     mapViewer.imageryLayers.add(heatLayer);
     try {
-      const surface = await createSurfaceRaster(raster.url, raster.bounds, controller.signal);
-      try {
+      const surface = raster.surface;
+      if (surface) {
         const makeLayer = async (url: string, alpha: number) => {
           const p =
             typeof C.SingleTileImageryProvider.fromUrl === 'function'
@@ -252,14 +234,18 @@ async function main() {
           return layer;
         };
         greenLayer = await makeLayer(surface.vegetation, 0.65);
-        roadLayer = await makeLayer(surface.roads, 0.85);
         greenLayer.show = false;
+        roadLayer = await makeLayer(surface.roads, 0.85);
         heatLayer.show = !embedded;
         roadLayer.show = embedded;
-      } finally {
-        surface.dispose();
+      } else {
+        notify({
+          type: 'surface-warning',
+          message: '도로·녹지 강조 자료를 읽지 못했습니다. 기본 LST는 계속 표시합니다.',
+        });
       }
     } catch {
+      controller.signal.throwIfAborted();
       notify({
         type: 'surface-warning',
         message: '도로·녹지 강조 자료를 읽지 못했습니다. 기본 LST는 계속 표시합니다.',
@@ -339,6 +325,10 @@ async function main() {
   window.addEventListener('pagehide', () => window.removeEventListener('message', onCommand), {
     once: true,
   });
+  // SDK 초기 비행이 뒤늦게 구도를 덮어쓸 수 있어 준비 완료 시 최종 구도를 확정한다.
+  if (embedded) focus(126.665, 37.451, 12500);
+  else focus(126.646, 37.4474, 1800);
+  performance.measure('urban-heat:ready', { start: 0, end: performance.now() });
   notify({
     type: 'ready',
     dataset,
@@ -346,12 +336,12 @@ async function main() {
     colorStops,
     missing: data.grids.filter((g) => g.lstC === null).length,
   });
-  if (embedded) focus(126.665, 37.451, 12500);
-  else focus(126.646, 37.4474, 1800);
+
   status.textContent = `연결 완료 · ${data.count.toLocaleString('ko-KR')}개 격자 · 브이월드 외관 표시 확인 필요`;
   mapViewer.scene.requestRender();
 }
 void main().catch(() => {
+  controller.abort();
   const message = '지도 연결에 실패했습니다. 브이월드 인증 설정과 백엔드 실행 상태를 확인해주세요.';
   status.textContent = message;
   notify({ type: 'error', message });
