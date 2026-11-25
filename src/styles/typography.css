@@ -1,0 +1,23 @@
+/* Pretendard v1.3.9, SIL Open Font License: public/fonts/pretendard/LICENSE.txt */
+@font-face {
+  font-family: 'Pretendard Variable';
+  font-style: normal;
+  font-weight: 45 920;
+  font-display: swap;
+  src: url('/fonts/pretendard/PretendardVariable.woff2') format('woff2-variations');
+}
+
+:root {
+  --app-font-family: 'Pretendard Variable', Pretendard, sans-serif;
+  font-family: var(--app-font-family);
+}
+
+body,
+button,
+input,
+select,
+textarea,
+option,
+optgroup {
+  font-family: var(--app-font-family);
+}
