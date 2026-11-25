@@ -2,3 +2,8 @@ node_modules/
 dist/
 coverage/
 package-lock.json
+
+# 원본 및 체크섬으로 검증하는 자동 생성 지도 자료
+public/map-data/landcover-2025.geojson
+public/map-data/prepared/
+public/map-data/prepared-manifest.json
