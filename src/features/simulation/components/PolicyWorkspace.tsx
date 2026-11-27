@@ -5,6 +5,9 @@ import type { GridMapItem } from '../../grid/api/gridApi';
 import {
   getAvailability,
   simulate,
+  simulateRanges,
+  matchingSimulationInputs,
+  type SimulationRangeResult,
   type Availability,
   type Policy,
   type PredictionGrid,
@@ -41,6 +44,7 @@ const reasonName = (reason: string | null) =>
           MODEL_INPUT_MISSING: '필요한 모델 입력 자료가 없습니다.',
           BASELINE_UNAVAILABLE: '적용 전 예측을 계산할 수 없습니다.',
           PROXY_MIX_INFEASIBLE: '현재 공간 조건으로 입력 변화를 구성할 수 없습니다.',
+          RANGE_MIX_INFEASIBLE: '현재 공간 조건으로 식생 표본의 예측 범위를 계산할 수 없습니다.',
           NO_ROOF: '대상 옥상 면적이 없습니다.',
         } as Record<string, string>
       )[reason] ?? '현재 자료의 품질 조건을 충족하지 못했습니다.')
@@ -76,6 +80,76 @@ function Metric({
   );
 }
 
+function TemperatureRange({
+  lower,
+  upper,
+  delta = false,
+}: {
+  lower: number | null | undefined;
+  upper: number | null | undefined;
+  delta?: boolean;
+}) {
+  if (lower == null || upper == null) return <>—</>;
+  const bound = (value: number) => (
+    <span
+      className={
+        delta
+          ? value < 0
+            ? 'temperature-decrease'
+            : value > 0
+              ? 'temperature-increase'
+              : undefined
+          : undefined
+      }
+    >
+      {delta ? signed(value) : number(value)}
+    </span>
+  );
+  return (
+    <>
+      {bound(lower)}
+      <span className="policy-range-separator"> ~ </span>
+      {bound(upper)}
+      <small> ℃</small>
+    </>
+  );
+}
+function RangeMetric({
+  label,
+  lower,
+  upper,
+  delta = false,
+  pending,
+  failed,
+  unavailable,
+}: {
+  label: string;
+  lower?: number | null;
+  upper?: number | null;
+  delta?: boolean;
+  pending: boolean;
+  failed: boolean;
+  unavailable?: boolean;
+}) {
+  return (
+    <article className="policy-metric policy-range-metric">
+      <span>{label}</span>
+      <strong>
+        <TemperatureRange lower={lower} upper={upper} delta={delta} />
+      </strong>
+      <p>
+        {pending
+          ? '범위 계산 중…'
+          : failed
+            ? '범위 조회 실패'
+            : unavailable
+              ? '범위 계산 불가'
+              : '식생 표본의 10~90분위'}
+      </p>
+    </article>
+  );
+}
+
 export default function PolicyWorkspace({
   dataset,
   selected,
@@ -92,6 +166,10 @@ export default function PolicyWorkspace({
   const gridAnalysis = useGridAnalysis(dataset.datasetId, selected.gridId);
   const dialog = useRef<HTMLDialogElement>(null);
   const request = useRef<AbortController | null>(null);
+  const rangeRequest = useRef<AbortController | null>(null);
+  const [rangeResult, setRangeResult] = useState<SimulationRangeResult | null>(null);
+  const [rangeLoading, setRangeLoading] = useState(false);
+  const [rangeError, setRangeError] = useState<string | null>(null);
   const [availability, setAvailability] = useState<Availability | null>(null);
   const [availabilityError, setAvailabilityError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
@@ -106,6 +184,7 @@ export default function PolicyWorkspace({
     element?.showModal();
     return () => {
       request.current?.abort();
+      rangeRequest.current?.abort();
       element?.close();
       if (previous instanceof HTMLElement && previous.isConnected) previous.focus();
     };
@@ -143,10 +222,44 @@ export default function PolicyWorkspace({
   const grid = result?.grids.find((g) => g.gridId === selected.gridId);
   function choose(next: Policy) {
     request.current?.abort();
+    rangeRequest.current?.abort();
+    setRangeResult(null);
+    setRangeError(null);
+    setRangeLoading(false);
     setLoading(false);
     setPolicy(next);
     setResult(null);
     setError(null);
+  }
+  const rangeMismatch = !!result && !!rangeResult && !matchingSimulationInputs(result, rangeResult);
+  const visibleRanges = rangeMismatch ? null : rangeResult;
+  const rangeGrid = visibleRanges?.grids.find((g) => g.gridId === selected.gridId);
+  const displayedRangeError =
+    rangeError ??
+    (rangeMismatch
+      ? 'XAI와 예측 범위의 입력 자료가 일치하지 않습니다. 범위를 다시 조회해주세요.'
+      : null);
+  async function loadRanges() {
+    rangeRequest.current?.abort();
+    const controller = new AbortController();
+    rangeRequest.current = controller;
+    setRangeLoading(true);
+    setRangeResult(null);
+    setRangeError(null);
+    try {
+      const value = await simulateRanges(
+        dataset.datasetId,
+        selected.gridId,
+        policy,
+        controller.signal,
+      );
+      if (!controller.signal.aborted) setRangeResult(value);
+    } catch (e) {
+      if (!controller.signal.aborted)
+        setRangeError(e instanceof Error ? e.message : '예측 범위를 불러오지 못했습니다.');
+    } finally {
+      if (!controller.signal.aborted) setRangeLoading(false);
+    }
   }
   async function run() {
     if (!allowed) return;
@@ -154,6 +267,7 @@ export default function PolicyWorkspace({
     const controller = new AbortController();
     request.current = controller;
     setStep(3);
+    void loadRanges();
     setLoading(true);
     setResult(null);
     setError(null);
@@ -176,7 +290,7 @@ export default function PolicyWorkspace({
   return (
     <dialog
       ref={dialog}
-      className="policy-workspace"
+      className={`policy-workspace${step === 3 ? ' policy-workspace-results' : ''}`}
       aria-labelledby="policy-title"
       onCancel={(e) => {
         e.preventDefault();
@@ -203,7 +317,9 @@ export default function PolicyWorkspace({
             key={label}
             type="button"
             aria-current={step === i + 1 ? 'step' : undefined}
-            disabled={loading || (i === 1 && !allowed) || (i === 2 && !result && !error)}
+            disabled={
+              loading || (i === 1 && !allowed) || (i === 2 && !result && !rangeResult && !error)
+            }
             onClick={() => go(i + 1)}
           >
             <span>{i + 1}</span>
@@ -360,12 +476,44 @@ export default function PolicyWorkspace({
               </div>
             )}
             {error && !grid && <GridAnalysisPanel analysis={gridAnalysis} />}
-            {(result || loading) && (
+            {(result || rangeResult || loading || rangeLoading) && (
               <div className="policy-metrics">
-                <Metric label="적용 전 예측 LST" value={grid?.baselinePredictedLstC} />
-                <Metric label="적용 후 예측 LST" value={grid?.scenarioPredictedLstC} />
-                <Metric label="예측 LST 변화량" value={change} delta />
+                <Metric
+                  label="적용 전 예측 LST"
+                  value={grid?.baselinePredictedLstC ?? rangeGrid?.baselinePredictedLstC}
+                />
+                <RangeMetric
+                  label="적용 후 예측 LST"
+                  lower={rangeGrid?.scenarioPredictedLstLowerC}
+                  upper={rangeGrid?.scenarioPredictedLstUpperC}
+                  pending={rangeLoading}
+                  failed={!!displayedRangeError}
+                  unavailable={rangeGrid?.qualityStatus === 'UNAVAILABLE'}
+                />
+                <RangeMetric
+                  label="예측 LST 변화량"
+                  lower={rangeGrid?.deltaLstLowerC}
+                  upper={rangeGrid?.deltaLstUpperC}
+                  delta
+                  pending={rangeLoading}
+                  failed={!!displayedRangeError}
+                  unavailable={rangeGrid?.qualityStatus === 'UNAVAILABLE'}
+                />
               </div>
+            )}
+            {displayedRangeError && (
+              <div className="policy-alert" role="alert">
+                <strong>예측 범위를 불러오지 못했습니다.</strong>
+                <p>{displayedRangeError}</p>
+                <button type="button" disabled={rangeLoading} onClick={() => void loadRanges()}>
+                  범위 다시 불러오기
+                </button>
+              </div>
+            )}
+            {rangeGrid?.qualityStatus === 'UNAVAILABLE' && (
+              <p className="policy-range-note">
+                {reasonName(rangeGrid.reason)} 계산 불가를 효과 없음으로 해석하지 마세요.
+              </p>
             )}
             {grid && (
               <>
@@ -379,6 +527,7 @@ export default function PolicyWorkspace({
                       </>
                     ) : (
                       <>
+                        <p className="policy-range-note">대표값 기준의 지수별 기여도입니다.</p>
                         <h4>
                           {change != null && Math.abs(change) < 0.005
                             ? '분석 결과, 정책 적용 후 해당 격자의 지표면 온도 변화는 0.01℃ 미만입니다.'
@@ -482,8 +631,8 @@ export default function PolicyWorkspace({
                           <tr>
                             <th>격자</th>
                             <th>적용 전</th>
-                            <th>적용 후</th>
-                            <th>변화량</th>
+                            <th>적용 후 범위</th>
+                            <th>변화량 범위</th>
                             <th>자료 상태</th>
                           </tr>
                         </thead>
@@ -495,9 +644,41 @@ export default function PolicyWorkspace({
                                 {g.gridId === selected.gridId ? ' (선택)' : ''}
                               </th>
                               <td>{number(g.baselinePredictedLstC)}℃</td>
-                              <td>{number(g.scenarioPredictedLstC)}℃</td>
-                              <td>{signed(g.deltaLstC)}℃</td>
-                              <td>{qualityName(g.qualityStatus)}</td>
+                              <td>
+                                <TemperatureRange
+                                  lower={
+                                    visibleRanges?.grids.find((r) => r.gridId === g.gridId)
+                                      ?.scenarioPredictedLstLowerC
+                                  }
+                                  upper={
+                                    visibleRanges?.grids.find((r) => r.gridId === g.gridId)
+                                      ?.scenarioPredictedLstUpperC
+                                  }
+                                />
+                              </td>
+                              <td>
+                                <TemperatureRange
+                                  lower={
+                                    visibleRanges?.grids.find((r) => r.gridId === g.gridId)
+                                      ?.deltaLstLowerC
+                                  }
+                                  upper={
+                                    visibleRanges?.grids.find((r) => r.gridId === g.gridId)
+                                      ?.deltaLstUpperC
+                                  }
+                                  delta
+                                />
+                              </td>
+                              <td>
+                                {visibleRanges
+                                  ? qualityName(
+                                      visibleRanges.grids.find((r) => r.gridId === g.gridId)!
+                                        .qualityStatus,
+                                    )
+                                  : rangeLoading
+                                    ? '범위 계산 중'
+                                    : '범위 조회 실패'}
+                              </td>
                             </tr>
                           ))}
                         </tbody>
@@ -508,8 +689,9 @@ export default function PolicyWorkspace({
                 <details className="policy-result-note">
                   <summary>자료 기준과 해석 범위</summary>
                   <p>
-                    기준일 {result?.date}. 지수별 기여도의 합은 예측 LST 변화량과 같습니다. 현재
-                    온도가 높은 원인의 종합 분석이나 최적 정책 추천 결과는 아닙니다.
+                    기준일 {result?.date}. 상단 범위는 식생 표본별 예측의 10~90분위이며 실제 효과를
+                    보장하는 구간은 아닙니다. XAI 지수별 기여도의 합은 대표값의 예측 LST 변화량과
+                    같습니다. 현재 온도가 높은 원인의 종합 분석이나 최적 정책 추천 결과는 아닙니다.
                   </p>
                   <p>
                     30m 격자는 자료 결합 단위이며 실제 정책 효과나 모델 정확도를 이 화면에서 검증한
