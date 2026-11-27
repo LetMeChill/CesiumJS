@@ -13,7 +13,8 @@
     "dev:remote": "vite --mode remote",
     "map:prepare": "node scripts/generate-map-assets.mjs",
     "map:verify": "node scripts/verify-map-assets.mjs",
-    "test:map": "node scripts/test-map-performance.mjs"
+    "test:map": "node scripts/test-map-performance.mjs",
+    "test:analysis": "node scripts/test-grid-analysis.mjs"
   },
   "dependencies": {
     "cesium": "^1.146.0",
