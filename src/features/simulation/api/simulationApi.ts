@@ -31,6 +31,18 @@ export interface SimulationResult {
   affectedGridCount?: number;
   totalNewCanopyAreaM2?: number;
 }
+export interface PredictionRangeGrid extends Omit<
+  PredictionGrid,
+  'scenarioPredictedLstC' | 'deltaLstC' | 'explanation'
+> {
+  scenarioPredictedLstLowerC: number | null;
+  scenarioPredictedLstUpperC: number | null;
+  deltaLstLowerC: number | null;
+  deltaLstUpperC: number | null;
+}
+export interface SimulationRangeResult extends Omit<SimulationResult, 'grids'> {
+  grids: PredictionRangeGrid[];
+}
 export interface Availability {
   datasetCode: string;
   gridVersion: string;
@@ -87,6 +99,73 @@ function validGrid(g: unknown): g is PredictionGrid {
       1e-5
   );
 }
+function validRangeGrid(g: unknown): g is PredictionRangeGrid {
+  if (
+    !object(g) ||
+    typeof g.gridId !== 'string' ||
+    !['SAME_DAY', 'PRIOR_SUPPORTED', 'UNAVAILABLE'].includes(String(g.qualityStatus)) ||
+    !(g.reason === null || typeof g.reason === 'string') ||
+    !Array.isArray(g.sourceDates) ||
+    !g.sourceDates.every((d) => typeof d === 'string') ||
+    !nullableNumber(g.baselinePredictedLstC) ||
+    ![
+      'scenarioPredictedLstLowerC',
+      'scenarioPredictedLstUpperC',
+      'deltaLstLowerC',
+      'deltaLstUpperC',
+    ].every((k) => nullableNumber(g[k])) ||
+    (g.appliedRoofAreaM2 !== undefined &&
+      (!finite(g.appliedRoofAreaM2) || g.appliedRoofAreaM2 < 0)) ||
+    (g.newCanopyAreaM2 !== undefined && (!finite(g.newCanopyAreaM2) || g.newCanopyAreaM2 < 0))
+  )
+    return false;
+  if (g.qualityStatus === 'UNAVAILABLE')
+    return (
+      g.scenarioPredictedLstLowerC === null &&
+      g.scenarioPredictedLstUpperC === null &&
+      g.deltaLstLowerC === null &&
+      g.deltaLstUpperC === null
+    );
+  return (
+    finite(g.baselinePredictedLstC) &&
+    finite(g.scenarioPredictedLstLowerC) &&
+    finite(g.scenarioPredictedLstUpperC) &&
+    finite(g.deltaLstLowerC) &&
+    finite(g.deltaLstUpperC) &&
+    g.scenarioPredictedLstLowerC <= g.scenarioPredictedLstUpperC &&
+    g.deltaLstLowerC <= g.deltaLstUpperC &&
+    Math.abs(g.baselinePredictedLstC + g.deltaLstLowerC - g.scenarioPredictedLstLowerC) < 1e-5 &&
+    Math.abs(g.baselinePredictedLstC + g.deltaLstUpperC - g.scenarioPredictedLstUpperC) < 1e-5
+  );
+}
+
+// The two endpoints use different vegetation samples. Match identities and inputs,
+// but do not require a representative value to lie within the sample quantiles.
+export function matchingSimulationInputs(
+  explanation: SimulationResult,
+  ranges: SimulationRangeResult,
+): boolean {
+  return (
+    explanation.datasetCode === ranges.datasetCode &&
+    explanation.gridVersion === ranges.gridVersion &&
+    explanation.date === ranges.date &&
+    explanation.grids.length === ranges.grids.length &&
+    explanation.treeCount === ranges.treeCount &&
+    explanation.affectedGridCount === ranges.affectedGridCount &&
+    explanation.totalNewCanopyAreaM2 === ranges.totalNewCanopyAreaM2 &&
+    explanation.grids.every((g) => {
+      const r = ranges.grids.find((candidate) => candidate.gridId === g.gridId);
+      return (
+        !!r &&
+        g.baselinePredictedLstC === r.baselinePredictedLstC &&
+        g.appliedRoofAreaM2 === r.appliedRoofAreaM2 &&
+        g.newCanopyAreaM2 === r.newCanopyAreaM2 &&
+        [...g.sourceDates].sort().join(',') === [...r.sourceDates].sort().join(',')
+      );
+    })
+  );
+}
+
 export async function getAvailability(signal: AbortSignal): Promise<Availability> {
   const response = await fetch('/data/policy-availability-20260616.json', { signal });
   if (!response.ok) throw new Error('정책 적용 범위 자료를 불러오지 못했습니다.');
@@ -113,22 +192,28 @@ export async function getAvailability(signal: AbortSignal): Promise<Availability
     throw new Error('정책 적용 범위 자료의 버전이나 형식을 확인할 수 없습니다.');
   return value as unknown as Availability;
 }
-export async function simulate(
+async function requestSimulation(
   datasetId: number,
   gridId: string,
   policy: Policy,
   signal: AbortSignal,
-): Promise<SimulationResult> {
+  ranges = false,
+): Promise<SimulationResult | SimulationRangeResult> {
   const base = import.meta.env.VITE_API_BASE_URL?.trim().replace(/\/+$/, '');
   if (!base) throw new Error('API 기본 주소가 설정되지 않았습니다.');
   let response: Response;
   try {
-    response = await fetch(`${base}/v1/datasets/${datasetId}/simulations/${policy}/explain`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: JSON.stringify(policy === 'green-roof' ? { gridId } : { selectedGridIds: [gridId] }),
-      signal: AbortSignal.any([signal, AbortSignal.timeout(40000)]),
-    });
+    response = await fetch(
+      `${base}/v1/datasets/${datasetId}/simulations/${policy}${ranges ? '' : '/explain'}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify(
+          !ranges && policy === 'green-roof' ? { gridId } : { selectedGridIds: [gridId] },
+        ),
+        signal: AbortSignal.any([signal, AbortSignal.timeout(40000)]),
+      },
+    );
   } catch (error) {
     if (error instanceof DOMException && error.name === 'TimeoutError')
       throw new Error('예측 응답이 지연되고 있습니다. 잠시 후 다시 시도해주세요.', {
@@ -154,16 +239,21 @@ export async function simulate(
     );
   }
   const r = body.result;
-  const grids = policy === 'green-roof' ? [r.grid] : r.grids;
+  const grids = !ranges && policy === 'green-roof' ? [r.grid] : r.grids;
   if (
     r.datasetCode !== 'mch30_platform_fixed_v2' ||
     r.gridVersion !== 'mch30_v1' ||
     r.date !== '2026-06-16' ||
     r.sceneId !== 'LC08_L2SP_116034_20260616_20260626_02_T1' ||
     typeof r.scenarioVersion !== 'string' ||
+    (ranges &&
+      r.scenarioVersion !==
+        (policy === 'green-roof'
+          ? 'mch30_green_roof_area_20260616_p10p90_v1'
+          : 'mch30_street_tree_lst_20260616_p10p90_v1')) ||
     !Array.isArray(grids) ||
     !grids.length ||
-    !grids.every(validGrid) ||
+    !grids.every(ranges ? validRangeGrid : validGrid) ||
     !grids.some((g) => g.gridId === gridId) ||
     new Set(grids.map((g) => g.gridId)).size !== grids.length ||
     (policy === 'green-roof' && grids.length !== 1) ||
@@ -190,4 +280,27 @@ export async function simulate(
         }
       : {}),
   };
+}
+
+export async function simulate(
+  datasetId: number,
+  gridId: string,
+  policy: Policy,
+  signal: AbortSignal,
+): Promise<SimulationResult> {
+  return (await requestSimulation(datasetId, gridId, policy, signal)) as SimulationResult;
+}
+export async function simulateRanges(
+  datasetId: number,
+  gridId: string,
+  policy: Policy,
+  signal: AbortSignal,
+): Promise<SimulationRangeResult> {
+  return (await requestSimulation(
+    datasetId,
+    gridId,
+    policy,
+    signal,
+    true,
+  )) as SimulationRangeResult;
 }
