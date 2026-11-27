@@ -290,7 +290,7 @@ export default function PolicyWorkspace({
   return (
     <dialog
       ref={dialog}
-      className={`policy-workspace${step === 3 ? ' policy-workspace-results' : ''}`}
+      className="policy-workspace"
       aria-labelledby="policy-title"
       onCancel={(e) => {
         e.preventDefault();
