@@ -188,7 +188,7 @@ try {
       },
     }),
   );
-  await page.route('**/simulations/green-roof/explain', (route) =>
+  await page.route('**/simulations/green-roof{,/explain}', (route) =>
     route.fulfill({
       status: 503,
       json: { success: false, code: 'SIMULATION503_1', message: 'test' },
