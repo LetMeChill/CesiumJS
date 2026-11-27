@@ -1,0 +1,14 @@
+.result-section-heading,
+.policy-workspace .result-section-heading {
+  margin: 0 0 16px;
+  font-size: 24px;
+  font-weight: 700;
+  line-height: 1.35;
+  letter-spacing: -0.7px;
+}
+@media (max-width: 760px) {
+  .result-section-heading,
+  .policy-workspace .result-section-heading {
+    font-size: 21px;
+  }
+}

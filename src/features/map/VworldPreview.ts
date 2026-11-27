@@ -1,3 +1,4 @@
+import { captureMapSnapshot } from './utils/mapSnapshot';
 import { trackMapRendering } from './utils/mapRenderingMetrics';
 import { createGridPicker } from './utils/gridPicker';
 import { createPopulationLayer } from './layers/createPopulationLayer';
@@ -44,6 +45,7 @@ let heatLayer: ImageryLayer | undefined;
 let roadLayer: ImageryLayer | undefined;
 let greenLayer: ImageryLayer | undefined;
 let populationLayer: ReturnType<typeof createPopulationLayer> | undefined;
+let selectedGrid: GridMapItem | null = null;
 let stopClick: (() => void) | undefined;
 window.addEventListener(
   'pagehide',
@@ -69,7 +71,8 @@ function connectGridClick(C: CesiumRuntime, mapViewer: Viewer, data: GridMapData
       x = C.Math.toDegrees(c.longitude),
       y = C.Math.toDegrees(c.latitude);
     const grid: GridMapItem | undefined = pickGrid(x, y);
-    notify({ type: 'selected', grid: grid ?? null });
+    selectedGrid = grid ?? null;
+    notify({ type: 'selected', grid: selectedGrid });
     mapViewer.entities.removeById('selected-grid');
     if (grid) {
       mapViewer.entities.add({
@@ -279,6 +282,36 @@ async function main() {
       return;
     const command = message.data.command as MapCommand | undefined;
     if (!command) return;
+    if (command.type === 'capture-selection') {
+      if (typeof command.requestId !== 'string' || command.requestId.length > 100) return;
+      const grid = selectedGrid;
+      if (!grid || command.gridId !== grid.gridId) {
+        notify({
+          type: 'selection-snapshot',
+          requestId: command.requestId,
+          gridId: command.gridId,
+          snapshot: null,
+        });
+        return;
+      }
+      void captureMapSnapshot(C, mapViewer, grid).then(
+        (snapshot) =>
+          notify({
+            type: 'selection-snapshot',
+            requestId: command.requestId,
+            gridId: grid.gridId,
+            snapshot,
+          }),
+        () =>
+          notify({
+            type: 'selection-snapshot',
+            requestId: command.requestId,
+            gridId: grid.gridId,
+            snapshot: null,
+          }),
+      );
+      return;
+    }
     if (command.type === 'population') {
       populationLayer?.update(command);
     } else if (command.type === 'focus-point') {

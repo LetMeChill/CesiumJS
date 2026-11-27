@@ -1,0 +1,65 @@
+.grid-analysis-section {
+  margin: 24px 0;
+}
+.grid-analysis-box {
+  padding: 24px;
+  border: 1px solid #b9c5bf;
+  border-radius: 14px;
+  background: #fff;
+  color: #20302e;
+}
+.grid-analysis-box p {
+  margin: 12px 0;
+  line-height: 1.65;
+}
+.grid-analysis-box .grid-analysis-summary {
+  font-size: 17px;
+  font-weight: 600;
+}
+.grid-analysis-box .grid-analysis-evidence {
+  margin-top: 16px;
+  font-size: 14px;
+}
+.grid-analysis-box .grid-analysis-evidence h4 {
+  margin: 0 0 8px;
+  font-size: 15px;
+  font-weight: 650;
+}
+.grid-analysis-box .grid-analysis-summary u {
+  text-decoration-thickness: 1.5px;
+  text-underline-offset: 4px;
+}
+.grid-analysis-box dl {
+  margin: 16px 0;
+}
+.grid-analysis-box dl > div {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 0;
+  border-bottom: 1px solid #cbd3cf;
+}
+.grid-analysis-box dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+.grid-analysis-box button {
+  margin-top: 12px;
+  padding: 10px 16px;
+  font: inherit;
+  font-weight: 650;
+  color: #20302e;
+  background: #fff;
+  border: 1px solid #647872;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.grid-analysis-box button:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+.grid-analysis-box button:focus-visible {
+  outline: 3px solid #466d69;
+  outline-offset: 3px;
+}

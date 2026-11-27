@@ -13,7 +13,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { DatasetSummary } from '../../dataset/api/datasetApi';
 import type { GridMapItem } from '../../grid/api/gridApi';
 import { useGridDetail } from '../../grid/hooks/useGridDetail';
-import { MAP_CHANNEL, type MapCommand, type MapEvent } from '../vworldProtocol';
+import { MAP_CHANNEL, type MapCommand, type MapEvent, type MapSnapshot } from '../vworldProtocol';
 import { LST_COLOR_STOPS, type LstColorStop } from '../utils/lstColor';
 import GridSpatialDetails, { type GridSpatialValues } from './GridSpatialDetails';
 import './CesiumMap.css';
@@ -51,6 +51,23 @@ export default function VworldMap() {
   const detail = useGridDetail(dataset?.datasetId, selected?.gridId ?? null, !spatialPreview);
   const [detailOpen, setDetailOpen] = useState(false);
   const [policyOpen, setPolicyOpen] = useState(false);
+  const [mapSnapshot, setMapSnapshot] = useState<MapSnapshot | null>(null);
+  const [mapSnapshotError, setMapSnapshotError] = useState<string | null>(null);
+  const snapshotRequest = useRef<{ requestId: string; gridId: string } | null>(null);
+  const snapshotTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => {
+    if (!policyOpen) {
+      window.clearTimeout(snapshotTimer.current);
+      snapshotRequest.current = null;
+    }
+  }, [policyOpen]);
+  useEffect(
+    () => () => {
+      window.clearTimeout(snapshotTimer.current);
+      snapshotRequest.current = null;
+    },
+    [],
+  );
   const [count, setCount] = useState<number | null>(null);
   const [missing, setMissing] = useState<number | null>(null);
   const [heatmapReady, setHeatmapReady] = useState(false);
@@ -71,6 +88,24 @@ export default function VworldMap() {
       location.origin,
     );
   }
+  function openPolicy() {
+    if (!selected) return;
+    window.clearTimeout(snapshotTimer.current);
+    setMapSnapshot(null);
+    setMapSnapshotError(null);
+    const request = { requestId: crypto.randomUUID(), gridId: selected.gridId };
+    snapshotRequest.current = request;
+    snapshotTimer.current = window.setTimeout(() => {
+      if (snapshotRequest.current?.requestId === request.requestId) {
+        snapshotRequest.current = null;
+        setMapSnapshotError(
+          '열환경 지도 화면을 가져오지 못했습니다. 작업창을 닫고 다시 열어주세요.',
+        );
+      }
+    }, 5000);
+    send({ type: 'capture-selection', ...request });
+    setPolicyOpen(true);
+  }
   useEffect(() => {
     const receive = (message: MessageEvent) => {
       if (
@@ -80,7 +115,30 @@ export default function VworldMap() {
       )
         return;
       const event = message.data.event as MapEvent | undefined;
-      if (event?.type === 'ready') {
+      if (event?.type === 'selection-snapshot') {
+        const request = snapshotRequest.current;
+        if (!request || event.requestId !== request.requestId || event.gridId !== request.gridId)
+          return;
+        window.clearTimeout(snapshotTimer.current);
+        snapshotRequest.current = null;
+        const image = event.snapshot;
+        if (
+          image &&
+          image.gridId === request.gridId &&
+          typeof image.imageUrl === 'string' &&
+          image.imageUrl.startsWith('data:image/png;base64,') &&
+          image.imageUrl.length < 15000000 &&
+          [image.marker?.x, image.marker?.y].every(
+            (value) => Number.isFinite(value) && value >= 0 && value <= 1,
+          )
+        ) {
+          setMapSnapshot(image);
+          setMapSnapshotError(null);
+        } else
+          setMapSnapshotError(
+            '열환경 지도 화면을 가져오지 못했습니다. 작업창을 닫고 다시 열어주세요.',
+          );
+      } else if (event?.type === 'ready') {
         window.clearTimeout(timeoutRef.current);
         setDataset(event.dataset);
         setColorStops(event.colorStops);
@@ -452,11 +510,7 @@ export default function VworldMap() {
             </button>
           </div>
           {selected && dataset && (
-            <button
-              type="button"
-              className="policy-open-button"
-              onClick={() => setPolicyOpen(true)}
-            >
+            <button type="button" className="policy-open-button" onClick={openPolicy}>
               정책 적용 검토 <span aria-hidden="true">→</span>
             </button>
           )}
@@ -583,6 +637,8 @@ export default function VworldMap() {
           key={`${dataset.datasetId}:${selected.gridId}`}
           dataset={dataset}
           selected={selected}
+          mapSnapshot={mapSnapshot}
+          mapSnapshotError={mapSnapshotError}
           onClose={() => setPolicyOpen(false)}
         />
       )}
