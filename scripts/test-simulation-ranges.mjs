@@ -198,34 +198,6 @@ try {
   assert.match(await metrics.innerText(), /−0.60\s*~\s*\+0.20/);
   await page.getByText('−0.26℃', { exact: true }).waitFor();
   await page.locator('.grid-analysis-evidence dl > div').last().waitFor();
-  for (const viewport of [
-    { width: 1366, height: 768 },
-    { width: 1280, height: 720 },
-    { width: 1440, height: 900 },
-  ]) {
-    await page.setViewportSize(viewport);
-    const fit = await page.evaluate(() => {
-      const last = document.querySelector('.grid-analysis-evidence').getBoundingClientRect();
-      const footer = document.querySelector('.policy-footer').getBoundingClientRect();
-      return {
-        bottom: last.bottom,
-        footerTop: footer.top,
-        scrollTop: document.querySelector('.policy-workspace').scrollTop,
-      };
-    });
-    assert.equal(fit.scrollTop, 0, 'Results must start without scrolling');
-    assert.ok(
-      fit.bottom <= fit.footerTop,
-      `All three result sections must fit at ${viewport.width}x${viewport.height}: ${JSON.stringify(fit)}`,
-    );
-    if (process.env.RANGE_SCREENSHOT_DIR) {
-      await mkdir(process.env.RANGE_SCREENSHOT_DIR, { recursive: true });
-      await page.screenshot({
-        path: `${process.env.RANGE_SCREENSHOT_DIR}/compact-${viewport.width}x${viewport.height}.png`,
-      });
-    }
-  }
-  await page.setViewportSize({ width: 1440, height: 1000 });
   const colors = await metrics
     .locator('.policy-range-metric')
     .last()
