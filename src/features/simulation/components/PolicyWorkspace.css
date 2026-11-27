@@ -268,10 +268,12 @@
   font-weight: 600;
   letter-spacing: 0;
 }
-.temperature-decrease {
+.temperature-decrease,
+.policy-contributions strong.temperature-decrease {
   color: #2360ae;
 }
-.temperature-increase {
+.temperature-increase,
+.policy-contributions strong.temperature-increase {
   color: #c33a33;
 }
 .policy-quality {
@@ -292,12 +294,15 @@
 .policy-quality span {
   color: #53665a;
 }
+.policy-interpretation-section {
+  margin: 17px 0 24px;
+}
 .policy-interpretation {
   border: 1px solid #ccd7cf;
   border-radius: 11px;
   padding: 25px;
   background: white;
-  margin: 17px 0 22px;
+  margin: 0;
 }
 .policy-interpretation h3 {
   margin-bottom: 12px;
@@ -313,23 +318,46 @@
 }
 .policy-contributions {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 25px;
-  border-top: 1px solid #d8e0da;
-  border-bottom: 1px solid #d8e0da;
-  margin: 18px 0;
-  padding: 15px 0;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 28px;
+  border-top: 1px solid #b9c8bf;
+  border-bottom: 1px solid #b9c8bf;
+  margin: 24px 0 0;
+  padding: 24px 0;
 }
 .policy-contributions > div {
   display: flex;
+  flex-wrap: wrap;
+  align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  font-size: 13px;
+  gap: 12px 20px;
+  min-width: 0;
+}
+.policy-contributions span {
+  color: #263b32;
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.5;
 }
 .policy-contributions strong {
-  font-size: 17px;
+  color: #1e302c;
+  font-size: 32px;
+  font-weight: 750;
+  line-height: 1.2;
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
+}
+@media (max-width: 760px) {
+  .policy-contributions {
+    gap: 20px;
+    padding: 20px 0;
+  }
+  .policy-contributions span {
+    font-size: 16px;
+  }
+  .policy-contributions strong {
+    font-size: 28px;
+  }
 }
 .policy-result-bottom {
   display: grid;
@@ -709,4 +737,29 @@
   .policy-spinner {
     animation: none;
   }
+}
+
+.policy-location-map {
+  position: relative;
+  margin: 16px 0;
+  overflow: hidden;
+  border-radius: 9px;
+  background: #eef3f1;
+}
+.policy-location-map img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.policy-location-marker {
+  position: absolute;
+  width: 20px;
+  height: 20px;
+  box-sizing: border-box;
+  border: 4px solid white;
+  border-radius: 50%;
+  background: #0e5f58;
+  outline: 2px solid #124c45;
+  box-shadow: 0 1px 7px #0009;
+  transform: translate(-50%, -50%);
 }

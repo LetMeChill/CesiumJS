@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { DatasetSummary } from '../../dataset/api/datasetApi';
+import type { MapSnapshot } from '../../map/vworldProtocol';
 import type { GridMapItem } from '../../grid/api/gridApi';
 import {
   getAvailability,
@@ -9,8 +10,11 @@ import {
   type PredictionGrid,
   type SimulationResult,
 } from '../api/simulationApi';
+import { GridAnalysisPanel } from '../../grid/analysis/GridAnalysisBox';
+import { useGridAnalysis } from '../../grid/analysis/useGridAnalysis';
 import SelectionLocation from './SelectionLocation';
 import './PolicyWorkspace.css';
+import '../../../styles/resultSectionHeading.css';
 
 const number = (value: number | null | undefined, digits = 2) =>
   value == null
@@ -75,12 +79,17 @@ function Metric({
 export default function PolicyWorkspace({
   dataset,
   selected,
+  mapSnapshot,
+  mapSnapshotError,
   onClose,
 }: {
   dataset: DatasetSummary;
   selected: GridMapItem;
+  mapSnapshot?: MapSnapshot | null;
+  mapSnapshotError?: string | null;
   onClose: () => void;
 }) {
+  const gridAnalysis = useGridAnalysis(dataset.datasetId, selected.gridId);
   const dialog = useRef<HTMLDialogElement>(null);
   const request = useRef<AbortController | null>(null);
   const [availability, setAvailability] = useState<Availability | null>(null);
@@ -333,8 +342,7 @@ export default function PolicyWorkspace({
         {step === 3 && (
           <>
             <div className="policy-section-title">
-              <h3>{policyName(policy)} 적용 전후 비교</h3>
-              <p>같은 조건의 예측값을 비교합니다. 관측 LST와는 구분해 확인하세요.</p>
+              <h3 className="result-section-heading">1. {policyName(policy)} 적용 전후 비교</h3>
             </div>
             {loading && (
               <div className="policy-loading" role="status">
@@ -351,6 +359,7 @@ export default function PolicyWorkspace({
                 </button>
               </div>
             )}
+            {error && !grid && <GridAnalysisPanel analysis={gridAnalysis} />}
             {(result || loading) && (
               <div className="policy-metrics">
                 <Metric label="적용 전 예측 LST" value={grid?.baselinePredictedLstC} />
@@ -360,53 +369,64 @@ export default function PolicyWorkspace({
             )}
             {grid && (
               <>
-                <div className="policy-quality">
-                  <strong>{qualityName(grid.qualityStatus)}</strong>
-                  <span>
-                    {grid.sourceDates.length
-                      ? `사용 관측일 ${grid.sourceDates.join(', ')}`
-                      : '사용 가능한 관측일 없음'}
-                  </span>
-                </div>
-                <section className="policy-interpretation">
-                  <h3>AI 결과 해석</h3>
-                  {change === null ? (
-                    <>
-                      <h4>현재 자료로는 온도 변화량을 계산할 수 없습니다.</h4>
-                      <p>{reasonName(grid.reason)} 계산 불가를 효과 없음으로 해석하지 마세요.</p>
-                    </>
-                  ) : (
-                    <>
-                      <h4>
-                        {change != null && Math.abs(change) < 0.005
-                          ? '이 격자의 예측 LST 변화는 0.01℃ 미만입니다.'
-                          : `이 격자의 예측 LST가 약 ${number(Math.abs(change ?? 0))}℃ ${change != null && change < 0 ? '감소' : '증가'}합니다.`}
-                      </h4>
-                      {hasExplanation && (
-                        <div className="policy-contributions">
-                          <div>
-                            <span>식생 지수 변화의 온도 기여</span>
-                            <strong>{signed(hasExplanation.ndvi.contributionC)}℃</strong>
+                <section className="policy-interpretation-section" aria-label="XAI 분석 결과">
+                  <h3 className="result-section-heading">2. XAI 분석 결과</h3>
+                  <div className="policy-interpretation">
+                    {change === null ? (
+                      <>
+                        <h4>현재 자료로는 온도 변화량을 계산할 수 없습니다.</h4>
+                        <p>{reasonName(grid.reason)} 계산 불가를 효과 없음으로 해석하지 마세요.</p>
+                      </>
+                    ) : (
+                      <>
+                        <h4>
+                          {change != null && Math.abs(change) < 0.005
+                            ? '분석 결과, 정책 적용 후 해당 격자의 지표면 온도 변화는 0.01℃ 미만입니다.'
+                            : `분석 결과, 정책 적용 후 해당 격자의 지표면 온도는 약 ${number(Math.abs(change ?? 0))}℃ ${change != null && change < 0 ? '감소' : '증가'}합니다.`}
+                        </h4>
+                        {hasExplanation && (
+                          <div className="policy-contributions">
+                            <div>
+                              <span>식생 지수 변화의 온도 기여</span>
+                              <strong
+                                className={
+                                  hasExplanation.ndvi.contributionC < 0
+                                    ? 'temperature-decrease'
+                                    : hasExplanation.ndvi.contributionC > 0
+                                      ? 'temperature-increase'
+                                      : undefined
+                                }
+                              >
+                                {signed(hasExplanation.ndvi.contributionC)}℃
+                              </strong>
+                            </div>
+                            <div>
+                              <span>수분 지수 변화의 온도 기여</span>
+                              <strong
+                                className={
+                                  hasExplanation.ndmi.contributionC < 0
+                                    ? 'temperature-decrease'
+                                    : hasExplanation.ndmi.contributionC > 0
+                                      ? 'temperature-increase'
+                                      : undefined
+                                }
+                              >
+                                {signed(hasExplanation.ndmi.contributionC)}℃
+                              </strong>
+                            </div>
                           </div>
-                          <div>
-                            <span>수분 지수 변화의 온도 기여</span>
-                            <strong>{signed(hasExplanation.ndmi.contributionC)}℃</strong>
-                          </div>
-                        </div>
-                      )}
+                        )}
+                      </>
+                    )}
+                    {grid.qualityStatus === 'PRIOR_SUPPORTED' && (
                       <p>
-                        지수별 기여도를 바탕으로 정책 적용에 따른 예측 변화를 정리한 설명입니다.
-                        지표면온도의 변화이며 기온이나 체감온도의 변화는 아닙니다.
+                        <strong>당일 관측을 과거 관측 자료로 보완했습니다.</strong>{' '}
+                        {reasonName(grid.reason)} 사용한 관측일을 함께 확인하세요.
                       </p>
-                    </>
-                  )}
-                  {grid.qualityStatus === 'PRIOR_SUPPORTED' && (
-                    <p>
-                      <strong>당일 관측을 과거 관측 자료로 보완했습니다.</strong>{' '}
-                      {reasonName(grid.reason)} 사용한 관측일을 함께 확인하세요.
-                    </p>
-                  )}
+                    )}
+                  </div>
                 </section>
+                <GridAnalysisPanel analysis={gridAnalysis} />
                 <div className="policy-result-bottom">
                   <section className="policy-feature-table">
                     <h3>모델 입력은 어떻게 바뀌었나요?</h3>
@@ -442,7 +462,12 @@ export default function PolicyWorkspace({
                       표시하지 않습니다.
                     </p>
                   </section>
-                  <SelectionLocation regionId={dataset.region.regionId} selected={selected} />
+                  <SelectionLocation
+                    regionName={dataset.region.name}
+                    selected={selected}
+                    mapSnapshot={mapSnapshot}
+                    mapSnapshotError={mapSnapshotError}
+                  />
                 </div>
                 {policy === 'street-trees' && result && (
                   <section className="policy-neighbors">
