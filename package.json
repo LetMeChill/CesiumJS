@@ -15,7 +15,8 @@
     "map:verify": "node scripts/verify-map-assets.mjs",
     "test:map": "node scripts/test-map-performance.mjs",
     "test:analysis": "node scripts/test-grid-analysis.mjs",
-    "test:ranges": "node scripts/test-simulation-ranges.mjs"
+    "test:ranges": "node scripts/test-simulation-ranges.mjs",
+    "test:trees": "node scripts/test-tree-availability.mjs"
   },
   "dependencies": {
     "cesium": "^1.146.0",

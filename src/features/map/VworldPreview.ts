@@ -1,3 +1,8 @@
+import { getAvailability } from '../simulation/api/simulationApi';
+import {
+  createTreeAvailabilityLayer,
+  treeAvailabilityGrids,
+} from './layers/createTreeAvailabilityLayer';
 import { captureMapSnapshot } from './utils/mapSnapshot';
 import { trackMapRendering } from './utils/mapRenderingMetrics';
 import { createGridPicker } from './utils/gridPicker';
@@ -45,6 +50,8 @@ let heatLayer: ImageryLayer | undefined;
 let roadLayer: ImageryLayer | undefined;
 let greenLayer: ImageryLayer | undefined;
 let populationLayer: ReturnType<typeof createPopulationLayer> | undefined;
+let treeAvailabilityLayer: ReturnType<typeof createTreeAvailabilityLayer> | undefined;
+let treesVisible = false;
 let selectedGrid: GridMapItem | null = null;
 let stopClick: (() => void) | undefined;
 window.addEventListener(
@@ -53,6 +60,7 @@ window.addEventListener(
     controller.abort();
     stopClick?.();
     populationLayer?.destroy();
+    treeAvailabilityLayer?.destroy();
     if (viewer && !viewer.isDestroyed()) viewer.destroy();
   },
   { once: true },
@@ -64,13 +72,14 @@ function connectGridClick(C: CesiumRuntime, mapViewer: Viewer, data: GridMapData
   const handler = new C.ScreenSpaceEventHandler(mapViewer.canvas);
   handler.setInputAction((event: { position: Cartesian2 }) => {
     if (populationLayer?.handleClick(event.position)) return;
-    const ray = mapViewer.camera.getPickRay(event.position);
-    const point = ray && mapViewer.scene.globe.pick(ray, mapViewer.scene);
-    if (!point) return;
-    const c = C.Cartographic.fromCartesian(point),
-      x = C.Math.toDegrees(c.longitude),
-      y = C.Math.toDegrees(c.latitude);
-    const grid: GridMapItem | undefined = pickGrid(x, y);
+    let grid = treeAvailabilityLayer?.pickGrid(event.position);
+    if (!grid) {
+      const ray = mapViewer.camera.getPickRay(event.position);
+      const point = ray && mapViewer.scene.globe.pick(ray, mapViewer.scene);
+      if (!point) return;
+      const c = C.Cartographic.fromCartesian(point);
+      grid = pickGrid(C.Math.toDegrees(c.longitude), C.Math.toDegrees(c.latitude));
+    }
     selectedGrid = grid ?? null;
     notify({ type: 'selected', grid: selectedGrid });
     mapViewer.entities.removeById('selected-grid');
@@ -104,6 +113,8 @@ async function main() {
     window.Cesium.buildModuleUrl as ((url: string) => string) & { setBaseUrl(url: string): void }
   ).setBaseUrl(sdkBase);
   // SDK 초기화와 독립적인 다운로드를 먼저 시작한다. 실패는 아래 await에서 처리한다.
+  // Optional policy markers must not delay or prevent the temperature map.
+  const availabilityPromise = getAvailability(controller.signal).catch(() => null);
   const dataPromise = measureMapStage('data-total', () => loadMapData(controller.signal));
   const rastersPromise = measureMapStage('rasters-total', () =>
     loadMapRasters(dataPromise, controller.signal),
@@ -312,7 +323,12 @@ async function main() {
       );
       return;
     }
-    if (command.type === 'population') {
+    if (command.type === 'tree-availability') {
+      treesVisible = command.visible === true;
+      treeAvailabilityLayer?.setVisible(treesVisible);
+    } else if (command.type === 'focus-tree-availability') {
+      treeAvailabilityLayer?.focus();
+    } else if (command.type === 'population') {
       populationLayer?.update(command);
     } else if (command.type === 'focus-point') {
       if (
@@ -357,6 +373,23 @@ async function main() {
   window.addEventListener('message', onCommand);
   window.addEventListener('pagehide', () => window.removeEventListener('message', onCommand), {
     once: true,
+  });
+  void availabilityPromise.then((availability) => {
+    if (controller.signal.aborted) return;
+    try {
+      if (!availability)
+        throw new Error('가로수 적용 위치 자료를 불러오지 못했습니다. 지도를 새로고침해주세요.');
+      const grids = treeAvailabilityGrids(dataset, data, availability);
+      treeAvailabilityLayer = createTreeAvailabilityLayer(C, mapViewer, grids);
+      treeAvailabilityLayer.setVisible(treesVisible);
+      notify({ type: 'tree-availability', count: grids.length, error: null });
+    } catch (error) {
+      notify({
+        type: 'tree-availability',
+        count: 0,
+        error: error instanceof Error ? error.message : '가로수 적용 위치를 표시하지 못했습니다.',
+      });
+    }
   });
   // SDK 초기 비행이 뒤늦게 구도를 덮어쓸 수 있어 준비 완료 시 최종 구도를 확정한다.
   if (embedded) focus(126.665, 37.451, 12500);

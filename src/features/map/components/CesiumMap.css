@@ -487,3 +487,86 @@ summary:focus-visible {
 .temperature-view-mode input {
   accent-color: #008c9d;
 }
+
+.tree-availability-symbol {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-right: 7px;
+  border: 2px solid white;
+  border-radius: 50%;
+  background: #007d73;
+  box-shadow: 0 0 0 1px #007d73;
+  vertical-align: -1px;
+}
+.tree-availability-controls .location-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.tree-visibility-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 12px 0;
+  font-size: 12px;
+  cursor: pointer;
+}
+.tree-toggle-title {
+  min-width: 0;
+  line-height: 1.7;
+}
+.tree-toggle-title .pill {
+  margin-left: 5px;
+}
+.tree-toggle-control {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+}
+.tree-toggle-control input {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+}
+.tree-toggle-track {
+  width: 32px;
+  height: 18px;
+  border: 1px solid #7a8a88;
+  border-radius: 10px;
+  background: #e0e7e6;
+}
+.tree-toggle-track::after {
+  content: '';
+  display: block;
+  width: 12px;
+  height: 12px;
+  margin: 2px;
+  border-radius: 50%;
+  background: #637a76;
+}
+.tree-toggle-control input:checked + .tree-toggle-track {
+  border-color: #007d73;
+  background: #007d73;
+}
+.tree-toggle-control input:checked + .tree-toggle-track::after {
+  transform: translateX(14px);
+  background: white;
+}
+.tree-toggle-control input:focus-visible + .tree-toggle-track {
+  outline: 3px solid #007d73;
+  outline-offset: 3px;
+}
+.tree-toggle-state {
+  width: 23px;
+  font-size: 10px;
+  font-weight: 700;
+}
+.tree-visibility-toggle:has(input:disabled) {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

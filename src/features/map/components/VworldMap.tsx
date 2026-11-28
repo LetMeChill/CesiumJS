@@ -50,6 +50,9 @@ export default function VworldMap() {
   const [selected, setSelected] = useState<GridMapItem | null>(null);
   const detail = useGridDetail(dataset?.datasetId, selected?.gridId ?? null, !spatialPreview);
   const [detailOpen, setDetailOpen] = useState(false);
+  const [treesVisible, setTreesVisible] = useState(false);
+  const [treeCount, setTreeCount] = useState<number | null>(null);
+  const [treeError, setTreeError] = useState<string | null>(null);
   const [policyOpen, setPolicyOpen] = useState(false);
   const [mapSnapshot, setMapSnapshot] = useState<MapSnapshot | null>(null);
   const [mapSnapshotError, setMapSnapshotError] = useState<string | null>(null);
@@ -138,6 +141,15 @@ export default function VworldMap() {
           setMapSnapshotError(
             '열환경 지도 화면을 가져오지 못했습니다. 작업창을 닫고 다시 열어주세요.',
           );
+      } else if (event?.type === 'tree-availability') {
+        if (
+          Number.isInteger(event.count) &&
+          event.count >= 0 &&
+          (event.error === null || typeof event.error === 'string')
+        ) {
+          setTreeCount(event.count);
+          setTreeError(event.error);
+        }
       } else if (event?.type === 'ready') {
         window.clearTimeout(timeoutRef.current);
         setDataset(event.dataset);
@@ -224,6 +236,9 @@ export default function VworldMap() {
     population.data,
     heatmapReady,
   ]);
+  useEffect(() => {
+    if (heatmapReady) send({ type: 'tree-availability', visible: treesVisible && mode === 'heat' });
+  }, [heatmapReady, treesVisible, mode]);
   function switchMode(next: 'heat' | 'population') {
     modeRef.current = next;
     setMode(next);
@@ -396,6 +411,56 @@ export default function VworldMap() {
                 산림·초지 분류입니다. 개별 나무 위치·높이를 뜻하지 않습니다. 브이월드가 제공하는
                 외관 포함 3D 건물입니다. 건물 색상은 온도를 뜻하지 않습니다.
               </p>
+            </div>
+            <div className="control-section tree-availability-controls">
+              <h3>정책 적용 위치</h3>
+              <label className="tree-visibility-toggle">
+                <span className="tree-toggle-title">
+                  가로수 식재 가능 격자
+                  {treeCount !== null && !treeError && <span className="pill">{treeCount}개</span>}
+                </span>
+                <span className="tree-toggle-control">
+                  <input
+                    type="checkbox"
+                    role="switch"
+                    aria-label="가로수 식재 가능 격자 표시"
+                    checked={treesVisible}
+                    disabled={!heatmapReady || treeCount === null || !!treeError || treeCount === 0}
+                    onChange={(event) => setTreesVisible(event.target.checked)}
+                  />
+                  <span className="tree-toggle-track" aria-hidden="true" />
+                  <span className="tree-toggle-state" aria-hidden="true">
+                    {treesVisible ? 'ON' : 'OFF'}
+                  </span>
+                </span>
+              </label>
+              <p className="muted">
+                <span className="tree-availability-symbol" aria-hidden="true" />
+                초록색 표시를 클릭하면 해당 격자를 선택합니다.
+              </p>
+              <button
+                type="button"
+                className="location-button"
+                disabled={!heatmapReady || !treeCount || !!treeError}
+                onClick={() => {
+                  setTreesVisible(true);
+                  send({ type: 'tree-availability', visible: true });
+                  send({ type: 'focus-tree-availability' });
+                }}
+              >
+                가능 격자 모아보기 <span aria-hidden="true">↗</span>
+              </button>
+              {treeError ? (
+                <p className="muted" role="status">
+                  {treeError}
+                </p>
+              ) : treeCount === null ? (
+                <p className="muted" role="status">
+                  가로수 적용 위치를 불러오는 중입니다.
+                </p>
+              ) : treeCount === 0 ? (
+                <p className="muted">현재 기준 자료에 적용 가능한 격자가 없습니다.</p>
+              ) : null}
             </div>
           </>
         )}

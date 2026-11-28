@@ -12,6 +12,8 @@ export interface MapSnapshot {
 
 // 같은 출처의 지도 프레임과 React 패널이 주고받는 메시지다.
 export type MapCommand =
+  | { type: 'tree-availability'; visible: boolean }
+  | { type: 'focus-tree-availability' }
   | { type: 'capture-selection'; requestId: string; gridId: string }
   | PopulationLayerCommand
   | { type: 'focus-point'; longitude: number; latitude: number; range: number }
@@ -28,6 +30,7 @@ export type MapCommand =
   | { type: 'focus'; target: 'whole' | 'sk' | 'presentation' }
   | { type: 'zoom'; direction: 'in' | 'out' };
 export type MapEvent =
+  | { type: 'tree-availability'; count: number; error: string | null }
   | { type: 'selection-snapshot'; requestId: string; gridId: string; snapshot: MapSnapshot | null }
   | { type: 'population-selected'; selection: PopulationSelection }
   | {
